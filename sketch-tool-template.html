@@ -1,0 +1,1267 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Liquid Splatter — Audio-Reactive Fluid Visual Tool</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #0e0e11;
+      color: #e5e5eb;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      overflow: hidden;
+      height: 100%;
+      user-select: none;
+    }
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    /* Centered square canvas for Sketch 1:1 preview */
+    #canvas-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.7);
+      border-radius: 8px;
+      overflow: hidden;
+      /* Checkerboard background indicating transparency when Multiply / No BG is enabled */
+      background: #18181b url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cpath fill='%23222228' d='M0 0h16v16H0zM16 16h16v16H16z'/%3E%3C/svg%3E");
+    }
+    canvas#preview {
+      display: block;
+    }
+
+    /* Floating HUD controls */
+    #hud {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      width: 310px;
+      max-height: calc(100vh - 40px);
+      background: rgba(18, 18, 24, 0.85);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      padding: 16px 18px;
+      overflow-y: auto;
+      z-index: 100;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      font-size: 13px;
+      transition: transform 0.25s ease, opacity 0.25s ease;
+    }
+    #hud.collapsed {
+      transform: translateX(330px);
+      opacity: 0.2;
+    }
+    #hud-toggle {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 101;
+      background: rgba(28, 28, 36, 0.9);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #fff;
+      padding: 6px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 12px;
+      display: none;
+    }
+    #hud.collapsed + #hud-toggle {
+      display: block;
+    }
+    .hud-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .hud-title {
+      font-weight: 700;
+      font-size: 14px;
+      letter-spacing: 0.5px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .hud-close {
+      background: none;
+      border: none;
+      color: #888;
+      cursor: pointer;
+      font-size: 16px;
+      padding: 0 4px;
+    }
+    .hud-close:hover { color: #fff; }
+
+    .ctrl-group {
+      margin-bottom: 12px;
+    }
+    .ctrl-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+    .ctrl-label {
+      color: #aaa;
+      font-size: 12px;
+    }
+    .ctrl-val {
+      font-family: monospace;
+      color: #ff4d4d;
+      font-size: 11px;
+    }
+    input[type="range"] {
+      width: 100%;
+      height: 4px;
+      -webkit-appearance: none;
+      background: rgba(255, 255, 255, 0.12);
+      border-radius: 2px;
+      outline: none;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 13px;
+      height: 13px;
+      border-radius: 50%;
+      background: #ff3344;
+      cursor: pointer;
+      box-shadow: 0 0 6px rgba(255, 51, 68, 0.6);
+    }
+    .color-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    input[type="color"] {
+      -webkit-appearance: none;
+      border: none;
+      width: 32px;
+      height: 24px;
+      border-radius: 4px;
+      background: none;
+      cursor: pointer;
+    }
+    input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+    input[type="color"]::-webkit-color-swatch {
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 4px;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    button.btn {
+      flex: 1;
+      padding: 6px 10px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 6px;
+      color: #eee;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    button.btn:hover {
+      background: rgba(255, 255, 255, 0.16);
+      color: #fff;
+    }
+    button.btn.active {
+      background: #a3081e;
+      border-color: #ff3344;
+      color: #fff;
+      box-shadow: 0 0 10px rgba(163, 8, 30, 0.5);
+    }
+
+    .mic-banner {
+      background: rgba(255, 51, 68, 0.1);
+      border: 1px solid rgba(255, 51, 68, 0.25);
+      border-radius: 8px;
+      padding: 10px;
+      margin-bottom: 12px;
+      text-align: center;
+    }
+    .mic-btn {
+      width: 100%;
+      padding: 7px 12px;
+      background: #a3081e;
+      border: none;
+      border-radius: 6px;
+      color: #fff;
+      font-weight: 600;
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: background 0.2s;
+    }
+    .mic-btn:hover { background: #c20a24; }
+    .mic-btn.active {
+      background: #22c55e;
+      box-shadow: 0 0 12px rgba(34, 197, 94, 0.5);
+    }
+    .audio-meter {
+      height: 4px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 2px;
+      margin-top: 8px;
+      overflow: hidden;
+    }
+    .audio-level {
+      height: 100%;
+      width: 0%;
+      background: #22c55e;
+      transition: width 0.05s linear;
+    }
+
+    .presets {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 5px;
+      margin-top: 8px;
+    }
+    .preset-btn {
+      padding: 5px 8px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 5px;
+      color: #ccc;
+      font-size: 10px;
+      cursor: pointer;
+      text-align: center;
+    }
+    .preset-btn:hover {
+      background: rgba(255, 255, 255, 0.12);
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+  <!--
+  ═══════════════════════════════════════════════════════════════════════════
+   SKETCH CREATIVE TOOL — BUILD CONTRACT
+   Read this whole block before writing any code. It is complete: everything
+   needed to build a working tool is in this file. Do not look for other docs.
+  ═══════════════════════════════════════════════════════════════════════════
+
+   WHAT THIS IS
+   This file becomes a visual tool inside Sketch, a browser app for making
+   motion and audio-reactive visuals. Sketch takes the code inside the
+   <script type="text/sketch-tool"> block below and runs it on a background
+   thread (a Web Worker) in a locked-down sandbox. It reads the manifest to
+   build the UI, drives time and parameters, and samples the canvas into its
+   effects, audio, and export pipeline.
+
+   WHAT YOU IMPLEMENT — exactly three globals, exact names, all on `self`:
+
+     self.SKETCH_TOOL            the manifest (sliders, colors, audio targets)
+     self.sketchResize(w, h)     size the canvas
+     self.sketchDraw(state)      paint one frame
+
+   And you draw on `canvas`: an OffscreenCanvas Sketch creates for you before
+   your code runs. Use it as it is — do not declare your own `canvas`.
+
+   Sketch owns everything else: the clock, parameter state, value clamping,
+   the sandbox, the pixel bridge, effects, audio reactivity, and export.
+   There is NO host API to implement. If you find yourself writing message
+   handlers, a render loop, or a setParam function, you have misread this.
+
+  ───────────────────────────────────────────────────────────────────────────
+   HARD RULES — a file breaking any of these is rejected on upload
+  ───────────────────────────────────────────────────────────────────────────
+
+   1. ALL tool code goes inside the ONE <script type="text/sketch-tool">
+      block. Exactly one such block. Sketch never runs any other script in
+      this file — other scripts exist only for the local preview.
+
+   2. The code runs on a background thread. There is NO document, NO window,
+      NO DOM: no document.getElementById, no new Image(), no
+      requestAnimationFrame, no addEventListener for UI events, no CSS. Assign
+      the three globals as self.SKETCH_TOOL, self.sketchResize and
+      self.sketchDraw, at the top level of the code, while it first runs.
+
+   3. Put every pixel on `canvas`. It is the only surface Sketch sees. Get the
+      context once at the top level: canvas.getContext("2d") or
+      canvas.getContext("webgl2"). Extra `new OffscreenCanvas(w, h)` buffers
+      are fine for intermediate passes; only `canvas` is shown.
+
+   4. Animate ONLY from state.time (seconds). Never Date.now(), never
+      performance.now(), never your own frame counter. Export drives time as
+      frameIndex / fps, so any other clock desyncs or freezes the exported
+      video.
+
+   5. sketchDraw must be synchronous. Paint and return. No await, no
+      promises, no setTimeout.
+
+   6. Redraw the whole frame every call. Sketch jumps time backwards when
+      looping, scrubbing, and exporting, so never rely on what the previous
+      frame left on the canvas.
+
+   7. sketchResize(width, height) receives DEVICE PIXELS. Assign them to
+      canvas.width and canvas.height unchanged. Do NOT scale them — Sketch
+      already accounted for the display, and during a 4K export it passes
+      export resolution directly.
+
+      width and height can be ANY aspect ratio — Sketch defaults new projects
+      to a SQUARE (1:1) canvas, and the user can also pick 16:9, 9:16, 3:4, or
+      4:3. Compute every layout value — spacing, camera distance, vanishing
+      points, radii — from canvas.width and canvas.height INSIDE sketchDraw,
+      every call. Never hardcode a pixel constant. The local preview below
+      defaults to a square box for exactly this reason — resize the window to
+      confirm the visual still fits before uploading.
+
+   8. No network, no storage. No fetch, XMLHttpRequest, WebSocket,
+      EventSource, importScripts, no remote scripts, fonts, or images, no
+      indexedDB or caches. These are blocked, so code depending on them fails.
+      Draw everything from code.
+
+   9. No Worker, eval, new Function, nested iframe, popup, or navigation.
+      Blocked outright.
+
+  10. No external libraries. No three.js, p5.js, d3, or anything loaded from
+      a CDN. Plain Canvas 2D or raw WebGL only. If you need a helper, write it
+      inline in the tool code.
+
+  11. Keep the local-preview script at the bottom of the file. It lets the
+      author open the file in a browser while iterating; Sketch ignores it.
+
+  ───────────────────────────────────────────────────────────────────────────
+   MANIFEST CONSTRAINTS — all enforced; violations reject the file
+  ───────────────────────────────────────────────────────────────────────────
+
+   • At most 12 params and 8 colors; at least one of either.
+   • Keys match /^[a-z][a-z0-9_]{0,31}$/ — lowercase, start with a letter.
+   • Keys must be unique across params AND colors combined.
+   • Reserved keys, rejected: time, constructor, prototype, __proto__,
+     toString, valueOf, hasOwnProperty.
+   • name is 60 characters or fewer; each label is 40 or fewer.
+   • Numbers must be finite with absolute value <= 1e6, and satisfy
+     max > min, step > 0, and min <= default <= max.
+   • Colors are "#RRGGBB" only. No #RGB, rgb(), hsl(), or named colors.
+   • Every entry in the audio array must be a key that exists in params or
+     colors.
+
+   Choose knobs that visibly change the picture. Twelve near-identical
+   sliders make the tool unusable; four expressive ones make it feel alive.
+  ═══════════════════════════════════════════════════════════════════════════
+  -->
+
+  <script type="text/sketch-tool">
+    // ═══════════════════════════════════════════════════════════════════════
+    // 1. MANIFEST — UI controls and audio reactivity targets for Sketch
+    // ═══════════════════════════════════════════════════════════════════════
+    self.SKETCH_TOOL = {
+      schemaVersion: 1,
+      name: "Liquid Splatter",
+      params: [
+        { key: "amount",      label: "Liquid Amount",      min: 10,   max: 300, step: 1,    default: 85 },
+        { key: "stain_size",  label: "Stain Size",         min: 0.2,  max: 3.0, step: 0.05, default: 1.25 },
+        { key: "reach",       label: "Splatter Reach",     min: 0.2,  max: 2.0, step: 0.05, default: 1.0 },
+        { key: "persistence", label: "Accumulation",       min: 0,    max: 1,   step: 1,    default: 0 },
+        { key: "style",       label: "Textured Style",     min: 0,    max: 1,   step: 1,    default: 1 },
+        { key: "multiply",    label: "Multiply / No BG",   min: 0,    max: 1,   step: 1,    default: 0 },
+        { key: "placement",   label: "Center vs Edge",     min: 0,    max: 1,   step: 1,    default: 0 },
+        { key: "viscosity",   label: "Viscosity",          min: 0.2,  max: 2.5, step: 0.05, default: 1.0 },
+        { key: "drip_length", label: "Drip Length",        min: 0.0,  max: 2.5, step: 0.05, default: 0.8 },
+        { key: "speed",       label: "Impact Rate",        min: 0.2,  max: 3.0, step: 0.05, default: 1.0 },
+      ],
+      colors: [
+        { key: "color",       label: "Liquid Color",       default: "#8a0303" },
+        { key: "bg_color",    label: "Background",         default: "#f4eee6" },
+      ],
+      audio: ["amount", "stain_size", "reach", "viscosity"],
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // 2. SETUP — High-performance Canvas 2D context with full Alpha Channel
+    // ═══════════════════════════════════════════════════════════════════════
+    const ctx = canvas.getContext("2d");
+
+    // Deterministic Mulberry32 32-bit pseudo-random generator
+    function mulberry32(a) {
+      return function () {
+        let t = (a += 0x6d2b79f5);
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+
+    // Color conversion and tinting helpers
+    function hexToRgb(hex) {
+      const h = typeof hex === "string" && hex.charAt(0) === "#" ? hex.slice(1) : "";
+      if (h.length !== 6) return [138, 3, 3];
+      return [
+        parseInt(h.slice(0, 2), 16),
+        parseInt(h.slice(2, 4), 16),
+        parseInt(h.slice(4, 6), 16),
+      ];
+    }
+
+    function rgbaStr(rgb, a) {
+      return "rgba(" + rgb[0] + "," + rgb[1] + "," + rgb[2] + "," + a + ")";
+    }
+
+    function shadeRgb(rgb, factor) {
+      return [
+        Math.max(0, Math.min(255, Math.round(rgb[0] * factor))),
+        Math.max(0, Math.min(255, Math.round(rgb[1] * factor))),
+        Math.max(0, Math.min(255, Math.round(rgb[2] * factor))),
+      ];
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // 3. RESIZE — Assign device pixels directly without scaling
+    // ═══════════════════════════════════════════════════════════════════════
+    self.sketchResize = function (width, height) {
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+      }
+    };
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // 4. PROCEDURAL FLUID SPLATTER RENDERER
+    // ═══════════════════════════════════════════════════════════════════════
+    function renderSplatter(w, h, seedIdx, age, state, liquidRgb) {
+      const rng = mulberry32(seedIdx * 17923 + 94211);
+      const minDim = Math.min(w, h);
+      const isMultiply = state.multiply >= 0.5;
+      const isEdgeMode = state.placement >= 0.5;
+
+      // Splash expansion animation easing (explosive outward burst)
+      const burstDur = 0.22;
+      const burstProgress = Math.min(1.0, age / burstDur);
+      const burstEase = 1.0 - Math.pow(1.0 - burstProgress, 3.5);
+
+      // Drip progression
+      const dripStart = 0.14;
+      const dripProgress = Math.min(1.0, Math.max(0.0, (age - dripStart) / 0.7));
+      const dripEase = 1.0 - Math.pow(1.0 - dripProgress, 2.2);
+
+      // Fade factor for non-persistent mode
+      let alpha = 1.0;
+      if (state.persistence < 0.5) {
+        if (age > 0.9) {
+          alpha = Math.max(0.0, 1.0 - (age - 0.9) / 0.65);
+        }
+      }
+      if (alpha <= 0.001) return;
+
+      // Position & Angle calculation: MUTUALLY EXCLUSIVE (Center vs Edges)
+      let cx, cy, mainAngle, dirFactor;
+
+      if (isEdgeMode) {
+        // EDGE MODE: Splatters strictly hug the canvas perimeter frame and spray inward
+        const edgeSide = Math.floor(rng() * 4); // 0=Top, 1=Right, 2=Bottom, 3=Left
+        const edgeDepth = minDim * 0.045 * (0.2 + 0.8 * rng());
+        const along = 0.08 + 0.84 * rng(); // position along the boundary
+
+        if (edgeSide === 0) { // Top edge
+          cx = w * along;
+          cy = edgeDepth;
+          mainAngle = Math.PI * 0.5 + (rng() - 0.5) * 1.15; // spray downward
+        } else if (edgeSide === 1) { // Right edge
+          cx = w - edgeDepth;
+          cy = h * along;
+          mainAngle = Math.PI + (rng() - 0.5) * 1.15; // spray leftward
+        } else if (edgeSide === 2) { // Bottom edge
+          cx = w * along;
+          cy = h - edgeDepth;
+          mainAngle = -Math.PI * 0.5 + (rng() - 0.5) * 1.15; // spray upward
+        } else { // Left edge
+          cx = edgeDepth;
+          cy = h * along;
+          mainAngle = 0.0 + (rng() - 0.5) * 1.15; // spray rightward
+        }
+        dirFactor = 0.75 + 0.25 * rng(); // Strong inward kinetic spray
+      } else {
+        // CENTER MODE: Splatters strictly originate from central area
+        const cRadius = (minDim * 0.22) * Math.sqrt(rng()) * state.reach;
+        const cAng = rng() * Math.PI * 2;
+        cx = w * 0.5 + Math.cos(cAng) * cRadius;
+        cy = h * 0.5 + Math.sin(cAng) * cRadius;
+        mainAngle = rng() * Math.PI * 2;
+        dirFactor = 0.35 + 0.65 * rng();
+      }
+
+      // Fluid pool radius
+      const baseR = minDim * 0.052 * state.stain_size * (0.65 + 0.7 * rng()) * burstEase;
+      if (baseR < 0.5) return;
+
+      const isTextured = state.style >= 0.5;
+      const darkLiquidRgb = shadeRgb(liquidRgb, 0.62);
+      const deepCoreRgb = shadeRgb(liquidRgb, 0.45);
+
+      // Draw Main Irregular Organic Pool
+      const lobes = 10 + Math.floor(rng() * 8);
+      const poolPts = [];
+      for (let m = 0; m < lobes; m++) {
+        const baseTh = (m / lobes) * Math.PI * 2;
+        const jitterTh = baseTh + (rng() - 0.5) * (Math.PI / lobes) * 0.65;
+        const forwardBias = Math.max(0, Math.cos(jitterTh - mainAngle)) * dirFactor * 0.55;
+        const rVar = 0.6 + 0.65 * rng() + forwardBias;
+        const r = baseR * rVar;
+        poolPts.push({ x: cx + Math.cos(jitterTh) * r, y: cy + Math.sin(jitterTh) * r });
+      }
+
+      // 1-3 satellite sub-pools that merge into the main puddle body
+      const subCount = 2 + Math.floor(rng() * 3);
+      const subPools = [];
+      for (let s = 0; s < subCount; s++) {
+        const subAng = mainAngle + (rng() - 0.5) * 2.4;
+        const subDist = baseR * (0.4 + 0.65 * rng());
+        const subR = baseR * (0.35 + 0.48 * rng());
+        const scx = cx + Math.cos(subAng) * subDist;
+        const scy = cy + Math.sin(subAng) * subDist;
+        subPools.push({ x: scx, y: scy, r: subR });
+      }
+
+      // Radiating branching tendrils and spidery filaments
+      const tendrilCount = 5 + Math.floor(rng() * 7);
+      const tendrils = [];
+      const invVisc = 1.0 / Math.max(0.2, Math.sqrt(state.viscosity));
+      for (let j = 0; j < tendrilCount; j++) {
+        const tAng = mainAngle + (rng() - 0.5) * Math.PI * 1.5;
+        const maxLen = baseR * (1.3 + 3.2 * rng() * invVisc);
+        const curLen = maxLen * burstEase;
+        const midOff = (rng() - 0.5) * 0.45;
+        const rootX = cx + Math.cos(tAng) * (baseR * 0.7);
+        const rootY = cy + Math.sin(tAng) * (baseR * 0.7);
+        const midX = cx + Math.cos(tAng + midOff) * (baseR * 0.7 + curLen * 0.55);
+        const midY = cy + Math.sin(tAng + midOff) * (baseR * 0.7 + curLen * 0.55);
+        const tipX = cx + Math.cos(tAng) * (baseR * 0.7 + curLen);
+        const tipY = cy + Math.sin(tAng) * (baseR * 0.7 + curLen);
+        const rootW = Math.max(1.5, baseR * (0.16 + 0.12 * rng()));
+        const hasFork = rng() < 0.4;
+        let fork = null;
+        if (hasFork && curLen > baseR * 1.0) {
+          const forkAng = tAng + (rng() < 0.5 ? 0.65 : -0.65);
+          const fLen = curLen * 0.45;
+          fork = {
+            sx: midX,
+            sy: midY,
+            ex: midX + Math.cos(forkAng) * fLen,
+            ey: midY + Math.sin(forkAng) * fLen,
+            w: rootW * 0.5,
+          };
+        }
+        tendrils.push({ rootX, rootY, midX, midY, tipX, tipY, rootW, fork });
+      }
+
+      // Satellite droplets and aerosol spray
+      const dropCount = Math.floor(state.amount * (0.55 + 0.9 * rng()));
+      const drops = [];
+      for (let d = 0; d < dropCount; d++) {
+        const isDir = rng() < 0.65;
+        const dAng = isDir ? (mainAngle + (rng() - 0.5) * 1.35) : (rng() * Math.PI * 2);
+        const maxDist = baseR * (1.05 + Math.pow(rng(), 1.7) * 7.5 * state.reach * invVisc);
+        const curDist = maxDist * burstEase;
+        const dx = cx + Math.cos(dAng) * curDist;
+        const dy = cy + Math.sin(dAng) * curDist;
+
+        // Power-law size distribution: many tiny droplets, few larger ones
+        const sizeP = rng();
+        const dropR = Math.max(
+          0.6,
+          minDim * 0.0028 * state.stain_size * (0.35 + 3.8 * Math.pow(sizeP, 4.5))
+        );
+        const isElongated = dropR > minDim * 0.0035 && curDist > baseR * 1.8;
+        drops.push({ x: dx, y: dy, r: dropR, ang: dAng, elong: isElongated });
+      }
+
+      // Downward gravity drips
+      const dripCount = Math.floor(1 + rng() * 3.2 * state.drip_length);
+      const drips = [];
+      if (state.drip_length > 0.05) {
+        for (let k = 0; k < dripCount; k++) {
+          const dripAng = Math.PI * 0.5 + (rng() - 0.5) * 0.7;
+          const sx = cx + Math.cos(dripAng) * (baseR * 0.85);
+          const sy = cy + Math.sin(dripAng) * (baseR * 0.85);
+          const maxDripH = minDim * 0.09 * state.drip_length * (0.5 + 1.2 * rng()) * (1.2 / state.viscosity);
+          const curDripH = maxDripH * dripEase;
+          if (curDripH > 2) {
+            const ex = sx + (rng() - 0.5) * (curDripH * 0.15);
+            const ey = sy + curDripH;
+            const w0 = Math.max(2, baseR * 0.22);
+            const w1 = Math.max(1.2, baseR * 0.08);
+            const bulbR = Math.max(1.8, baseR * 0.17);
+            drips.push({ sx, sy, ex, ey, w0, w1, bulbR });
+          }
+        }
+      }
+
+      // Helper function to draw all fluid paths onto context
+      function traceFluidPaths() {
+        // Main pool spline
+        ctx.beginPath();
+        const pLen = poolPts.length;
+        ctx.moveTo((poolPts[0].x + poolPts[pLen - 1].x) / 2, (poolPts[0].y + poolPts[pLen - 1].y) / 2);
+        for (let m = 0; m < pLen; m++) {
+          const next = poolPts[(m + 1) % pLen];
+          ctx.quadraticCurveTo(poolPts[m].x, poolPts[m].y, (poolPts[m].x + next.x) / 2, (poolPts[m].y + next.y) / 2);
+        }
+        ctx.closePath();
+        ctx.fill();
+
+        // Sub pools
+        for (let s = 0; s < subPools.length; s++) {
+          const sp = subPools[s];
+          ctx.beginPath();
+          ctx.arc(sp.x, sp.y, sp.r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Tendrils
+        for (let j = 0; j < tendrils.length; j++) {
+          const td = tendrils[j];
+          ctx.beginPath();
+          ctx.moveTo(td.rootX, td.rootY);
+          ctx.quadraticCurveTo(td.midX, td.midY, td.tipX, td.tipY);
+          ctx.lineWidth = td.rootW;
+          ctx.lineCap = "round";
+          ctx.stroke();
+
+          // Droplet bead at tip
+          ctx.beginPath();
+          ctx.arc(td.tipX, td.tipY, td.rootW * 0.65, 0, Math.PI * 2);
+          ctx.fill();
+
+          if (td.fork) {
+            ctx.beginPath();
+            ctx.moveTo(td.fork.sx, td.fork.sy);
+            ctx.lineTo(td.fork.ex, td.fork.ey);
+            ctx.lineWidth = td.fork.w;
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(td.fork.ex, td.fork.ey, td.fork.w * 0.6, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+
+        // Gravity drips
+        for (let k = 0; k < drips.length; k++) {
+          const dp = drips[k];
+          ctx.beginPath();
+          ctx.moveTo(dp.sx - dp.w0 * 0.5, dp.sy);
+          ctx.quadraticCurveTo(dp.sx - dp.w1 * 0.5, (dp.sy + dp.ey) * 0.5, dp.ex - dp.w1 * 0.5, dp.ey);
+          ctx.arc(dp.ex, dp.ey, dp.bulbR, Math.PI, 0, true);
+          ctx.quadraticCurveTo(dp.sx + dp.w1 * 0.5, (dp.sy + dp.ey) * 0.5, dp.sx + dp.w0 * 0.5, dp.sy);
+          ctx.closePath();
+          ctx.fill();
+        }
+
+        // Droplets
+        for (let d = 0; d < drops.length; d++) {
+          const dr = drops[d];
+          ctx.beginPath();
+          if (dr.elong) {
+            ctx.ellipse(dr.x, dr.y, dr.r * 1.45, dr.r * 0.78, dr.ang, 0, Math.PI * 2);
+          } else {
+            ctx.arc(dr.x, dr.y, dr.r, 0, Math.PI * 2);
+          }
+          ctx.fill();
+        }
+      }
+
+      // PASS 1: Base Liquid Fill with optional Drop Shadow
+      ctx.globalCompositeOperation = isMultiply ? "multiply" : "source-over";
+
+      if (isTextured) {
+        ctx.save();
+        ctx.shadowColor = "rgba(0, 0, 0, " + (0.4 * alpha) + ")";
+        ctx.shadowBlur = minDim * 0.007;
+        ctx.shadowOffsetX = minDim * 0.002;
+        ctx.shadowOffsetY = minDim * 0.0035;
+        ctx.fillStyle = rgbaStr(liquidRgb, alpha);
+        ctx.strokeStyle = rgbaStr(liquidRgb, alpha);
+        traceFluidPaths();
+        ctx.restore();
+
+        // PASS 2: Liquid Volume Gradient (Rich thick coagulated core)
+        const radGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, baseR * 1.4);
+        radGrad.addColorStop(0, rgbaStr(deepCoreRgb, alpha * 0.85));
+        radGrad.addColorStop(0.65, rgbaStr(darkLiquidRgb, alpha * 0.5));
+        radGrad.addColorStop(1, rgbaStr(liquidRgb, 0.0));
+
+        ctx.fillStyle = radGrad;
+        ctx.beginPath();
+        ctx.arc(cx, cy, baseR * 1.4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // PASS 3: Glossy Specular Highlights (Viscous Wet Reflection)
+        ctx.globalCompositeOperation = "source-over";
+        const highlightAlpha = 0.65 * alpha;
+        ctx.fillStyle = "rgba(255, 255, 255, " + highlightAlpha + ")";
+        ctx.strokeStyle = "rgba(255, 255, 255, " + (highlightAlpha * 0.85) + ")";
+
+        // Curved specular reflection arc on main pool
+        if (baseR > 8) {
+          ctx.beginPath();
+          const arcR = baseR * 0.55;
+          const arcCx = cx - baseR * 0.22;
+          const arcCy = cy - baseR * 0.22;
+          ctx.arc(arcCx, arcCy, arcR, -Math.PI * 0.9, -Math.PI * 0.2);
+          ctx.lineWidth = Math.max(1.2, minDim * 0.0032);
+          ctx.lineCap = "round";
+          ctx.stroke();
+        }
+
+        // Specular glints on medium & large satellite droplets
+        for (let d = 0; d < drops.length; d++) {
+          const dr = drops[d];
+          if (dr.r > minDim * 0.004) {
+            ctx.beginPath();
+            ctx.arc(dr.x - dr.r * 0.35, dr.y - dr.r * 0.35, Math.max(0.6, dr.r * 0.3), 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+
+        // Specular glints on drip teardrops
+        for (let k = 0; k < drips.length; k++) {
+          const dp = drips[k];
+          ctx.beginPath();
+          ctx.arc(dp.ex - dp.bulbR * 0.32, dp.ey - dp.bulbR * 0.32, Math.max(0.6, dp.bulbR * 0.3), 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else {
+        // Flat 2D Graphic Silhouette
+        ctx.fillStyle = rgbaStr(liquidRgb, alpha);
+        ctx.strokeStyle = rgbaStr(liquidRgb, alpha);
+        traceFluidPaths();
+      }
+
+      // Reset composite operation
+      ctx.globalCompositeOperation = "source-over";
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // 5. DRAW — Deterministic synchronous frame paint driven by state.time
+    // ═══════════════════════════════════════════════════════════════════════
+    self.sketchDraw = function (state) {
+      const w = canvas.width;
+      const h = canvas.height;
+      if (w < 1 || h < 1) return;
+
+      // Always reset composite mode before clearing/filling
+      ctx.globalCompositeOperation = "source-over";
+
+      // 1. Background handling (Multiply / Transparent vs Solid Background)
+      const isMultiply = state.multiply >= 0.5;
+      if (isMultiply) {
+        // Clear to transparent so liquid splatters directly over the layer underneath
+        ctx.clearRect(0, 0, w, h);
+      } else {
+        // Solid background paper/canvas fill
+        ctx.fillStyle = state.bg_color;
+        ctx.fillRect(0, 0, w, h);
+      }
+
+      const liquidRgb = hexToRgb(state.color);
+      const currentTime = Math.max(0, state.time);
+      const speed = Math.max(0.2, state.speed);
+
+      // Deterministic impact event timing
+      // Generates rhythmic splatter impacts modulated by impact rate
+      const baseInterval = 0.68 / speed;
+
+      // Fast forward to current event index
+      const estIdx = Math.floor(currentTime / baseInterval);
+      const maxEventIdx = Math.max(0, estIdx + 1);
+
+      // Calculate event times
+      function getEventTime(idx) {
+        // Pseudo-random deterministic jitter between beats
+        const hVal = (Math.sin(idx * 78.233 + 12.9898) * 43758.5453) % 1;
+        const jitter = (hVal - 0.5) * 0.28 * baseInterval;
+        return idx * baseInterval + jitter + 0.1;
+      }
+
+      // Determine active splatters
+      // Accumulation mode renders up to the last 42 splatters
+      // Fade mode renders only splatters whose age is < 1.6s
+      const isPersistent = state.persistence >= 0.5;
+      const maxHistory = isPersistent ? 42 : 12;
+      const startIdx = Math.max(0, maxEventIdx - maxHistory);
+
+      for (let i = startIdx; i <= maxEventIdx; i++) {
+        const evTime = getEventTime(i);
+        const age = currentTime - evTime;
+        if (age >= 0 && (isPersistent || age < 1.6)) {
+          renderSplatter(w, h, i, age, state, liquidRgb);
+        }
+      }
+    };
+  </script>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       LOCAL PREVIEW & INTERACTIVE HUD
+       Sketch never runs this; this lets you test the tool directly in any browser.
+  ═══════════════════════════════════════════════════════════════════════ -->
+  <div id="canvas-wrap">
+    <canvas id="preview"></canvas>
+  </div>
+
+  <div id="hud">
+    <div class="hud-header">
+      <div class="hud-title">🩸 Liquid Splatter</div>
+      <button class="hud-close" id="hud-close-btn" title="Minimize Controls">✕</button>
+    </div>
+
+    <!-- Live Web Audio Reactivity Section -->
+    <div class="mic-banner">
+      <button class="mic-btn" id="mic-toggle-btn">
+        <span>🎤</span> <span id="mic-btn-text">Enable Microphone</span>
+      </button>
+      <div class="audio-meter">
+        <div class="audio-level" id="mic-level-bar"></div>
+      </div>
+      <div style="font-size: 10px; color: #888; margin-top: 5px;">
+        Audio peaks trigger dynamic fluid velocity & spread
+      </div>
+    </div>
+
+    <!-- Sliders -->
+    <div class="ctrl-group">
+      <div class="ctrl-row">
+        <span class="ctrl-label">Liquid Amount</span>
+        <span class="ctrl-val" id="val-amount">85</span>
+      </div>
+      <input type="range" id="input-amount" min="10" max="300" step="1" value="85" />
+    </div>
+
+    <div class="ctrl-group">
+      <div class="ctrl-row">
+        <span class="ctrl-label">Stain Size</span>
+        <span class="ctrl-val" id="val-stain_size">1.25</span>
+      </div>
+      <input type="range" id="input-stain_size" min="0.2" max="3.0" step="0.05" value="1.25" />
+    </div>
+
+    <div class="ctrl-group">
+      <div class="ctrl-row">
+        <span class="ctrl-label">Splatter Reach</span>
+        <span class="ctrl-val" id="val-reach">1.00</span>
+      </div>
+      <input type="range" id="input-reach" min="0.2" max="2.0" step="0.05" value="1.0" />
+    </div>
+
+    <div class="ctrl-group">
+      <div class="ctrl-row">
+        <span class="ctrl-label">Viscosity</span>
+        <span class="ctrl-val" id="val-viscosity">1.00</span>
+      </div>
+      <input type="range" id="input-viscosity" min="0.2" max="2.5" step="0.05" value="1.0" />
+    </div>
+
+    <div class="ctrl-group">
+      <div class="ctrl-row">
+        <span class="ctrl-label">Drip Length</span>
+        <span class="ctrl-val" id="val-drip_length">0.80</span>
+      </div>
+      <input type="range" id="input-drip_length" min="0.0" max="2.5" step="0.05" value="0.8" />
+    </div>
+
+    <div class="ctrl-group">
+      <div class="ctrl-row">
+        <span class="ctrl-label">Impact Rate</span>
+        <span class="ctrl-val" id="val-speed">1.00</span>
+      </div>
+      <input type="range" id="input-speed" min="0.2" max="3.0" step="0.05" value="1.0" />
+    </div>
+
+    <!-- Splatter Placement Toggle: Center vs Edges (Exclusive) -->
+    <div class="ctrl-group">
+      <div class="ctrl-row"><span class="ctrl-label">Placement (Center vs Edge)</span></div>
+      <div class="btn-row">
+        <button class="btn active" id="btn-place-center">Center</button>
+        <button class="btn" id="btn-place-edge">Edges Only</button>
+      </div>
+    </div>
+
+    <!-- Layer Blending & Multiply Toggle -->
+    <div class="ctrl-group">
+      <div class="ctrl-row"><span class="ctrl-label">Layer Blending</span></div>
+      <div class="btn-row">
+        <button class="btn active" id="btn-mult-off">Opaque BG</button>
+        <button class="btn" id="btn-mult-on">Multiply / No BG</button>
+      </div>
+    </div>
+
+    <!-- Style & Accumulation Toggles -->
+    <div class="ctrl-group">
+      <div class="ctrl-row"><span class="ctrl-label">Render Style</span></div>
+      <div class="btn-row">
+        <button class="btn" id="btn-style-flat">Flat 2D</button>
+        <button class="btn active" id="btn-style-textured">Textured / Gloss</button>
+      </div>
+    </div>
+
+    <div class="ctrl-group">
+      <div class="ctrl-row"><span class="ctrl-label">Accumulation</span></div>
+      <div class="btn-row">
+        <button class="btn active" id="btn-persist-fade">Fade Out</button>
+        <button class="btn" id="btn-persist-accum">Accumulate</button>
+      </div>
+    </div>
+
+    <!-- Colors -->
+    <div class="color-row">
+      <span class="ctrl-label">Liquid Color</span>
+      <input type="color" id="input-color" value="#8a0303" />
+    </div>
+
+    <div class="color-row">
+      <span class="ctrl-label">Background</span>
+      <input type="color" id="input-bg_color" value="#f4eee6" />
+    </div>
+
+    <!-- Presets -->
+    <div style="margin-top: 14px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.08);">
+      <div class="ctrl-label" style="margin-bottom: 6px;">Drop Style Presets</div>
+      <div class="presets">
+        <button class="preset-btn" id="pre-blood">🩸 Blood Splatter</button>
+        <button class="preset-btn" id="pre-ink">✒️ Sumi Ink</button>
+        <button class="preset-btn" id="pre-spray">💨 Edge Frame Spray</button>
+        <button class="preset-btn" id="pre-pollock">🎨 Action Paint</button>
+      </div>
+    </div>
+  </div>
+
+  <button id="hud-toggle">⚙️ Show Controls</button>
+
+  <script>
+    // ═══════════════════════════════════════════════════════════════════════
+    // 6. LOCAL PREVIEW HARNESS WITH WEB AUDIO API INTEGRATION
+    // ═══════════════════════════════════════════════════════════════════════
+    (function localPreview() {
+      const code = document.querySelector('script[type="text/sketch-tool"]').textContent;
+      const runtime =
+        "self.canvas = new OffscreenCanvas(1, 1);\n" +
+        code + "\n;" +
+        "postMessage({ manifest: JSON.parse(JSON.stringify(self.SKETCH_TOOL)) });\n" +
+        "onmessage = (e) => {\n" +
+        "  self.sketchResize(e.data.width, e.data.height);\n" +
+        "  self.sketchDraw(e.data.state);\n" +
+        "  const c = typeof canvas !== 'undefined' ? canvas : self.canvas;\n" +
+        "  const bitmap = c.transferToImageBitmap();\n" +
+        "  postMessage({ bitmap }, [bitmap]);\n" +
+        "};\n";
+
+      const worker = new Worker(URL.createObjectURL(new Blob([runtime], { type: "text/javascript" })));
+      worker.onerror = (e) => console.error("[sketch] tool code failed:", e.message);
+
+      const view = document.getElementById("preview");
+      const out = view.getContext("bitmaprenderer");
+
+      const state = { time: 0 };
+      const baseParams = {};
+      let size = 1;
+      let busy = true;
+
+      // Fit square canvas preview to window
+      function fit() {
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        const side = Math.max(64, Math.min(window.innerWidth - 60, window.innerHeight - 60));
+        view.style.width = side + "px";
+        view.style.height = side + "px";
+        size = Math.max(1, Math.floor(side * dpr));
+        view.width = size;
+        view.height = size;
+      }
+      fit();
+      window.addEventListener("resize", fit);
+
+      // Web Audio API State
+      let audioCtx = null;
+      let analyser = null;
+      let micStream = null;
+      let isMicActive = false;
+      const levelBar = document.getElementById("mic-level-bar");
+
+      // UI HUD Controls
+      const hud = document.getElementById("hud");
+      const hudToggle = document.getElementById("hud-toggle");
+      const hudClose = document.getElementById("hud-close-btn");
+
+      hudClose.onclick = () => hud.classList.add("collapsed");
+      hudToggle.onclick = () => hud.classList.remove("collapsed");
+
+      function syncSlider(key, decimals = 2) {
+        const input = document.getElementById("input-" + key);
+        const valEl = document.getElementById("val-" + key);
+        if (!input || !valEl) return;
+        input.addEventListener("input", (e) => {
+          const val = parseFloat(e.target.value);
+          state[key] = val;
+          baseParams[key] = val;
+          valEl.textContent = decimals === 0 ? Math.round(val) : val.toFixed(decimals);
+        });
+      }
+
+      ["amount", "stain_size", "reach", "viscosity", "drip_length", "speed"].forEach((k) => {
+        syncSlider(k, k === "amount" ? 0 : 2);
+      });
+
+      // Placement toggle: Center vs Edges (Mutually Exclusive)
+      const btnPlaceCenter = document.getElementById("btn-place-center");
+      const btnPlaceEdge = document.getElementById("btn-place-edge");
+      btnPlaceCenter.onclick = () => {
+        state.placement = 0;
+        baseParams.placement = 0;
+        btnPlaceCenter.classList.add("active");
+        btnPlaceEdge.classList.remove("active");
+      };
+      btnPlaceEdge.onclick = () => {
+        state.placement = 1;
+        baseParams.placement = 1;
+        btnPlaceEdge.classList.add("active");
+        btnPlaceCenter.classList.remove("active");
+      };
+
+      // Multiply / Layer Blending toggle
+      const btnMultOff = document.getElementById("btn-mult-off");
+      const btnMultOn = document.getElementById("btn-mult-on");
+      btnMultOff.onclick = () => {
+        state.multiply = 0;
+        baseParams.multiply = 0;
+        btnMultOff.classList.add("active");
+        btnMultOn.classList.remove("active");
+      };
+      btnMultOn.onclick = () => {
+        state.multiply = 1;
+        baseParams.multiply = 1;
+        btnMultOn.classList.add("active");
+        btnMultOff.classList.remove("active");
+      };
+
+      // Style toggle buttons
+      const btnFlat = document.getElementById("btn-style-flat");
+      const btnTex = document.getElementById("btn-style-textured");
+      btnFlat.onclick = () => {
+        state.style = 0;
+        baseParams.style = 0;
+        btnFlat.classList.add("active");
+        btnTex.classList.remove("active");
+      };
+      btnTex.onclick = () => {
+        state.style = 1;
+        baseParams.style = 1;
+        btnTex.classList.add("active");
+        btnFlat.classList.remove("active");
+      };
+
+      // Accumulation toggle buttons
+      const btnFade = document.getElementById("btn-persist-fade");
+      const btnAccum = document.getElementById("btn-persist-accum");
+      btnFade.onclick = () => {
+        state.persistence = 0;
+        baseParams.persistence = 0;
+        btnFade.classList.add("active");
+        btnAccum.classList.remove("active");
+      };
+      btnAccum.onclick = () => {
+        state.persistence = 1;
+        baseParams.persistence = 1;
+        btnAccum.classList.add("active");
+        btnFade.classList.remove("active");
+      };
+
+      // Colors
+      const inputColor = document.getElementById("input-color");
+      inputColor.oninput = (e) => { state.color = e.target.value; };
+      const inputBg = document.getElementById("input-bg_color");
+      inputBg.oninput = (e) => { state.bg_color = e.target.value; };
+
+      // Drop Style Presets
+      function applyPreset(p) {
+        for (const k in p) {
+          state[k] = p[k];
+          baseParams[k] = p[k];
+          const input = document.getElementById("input-" + k);
+          const valEl = document.getElementById("val-" + k);
+          if (input) input.value = p[k];
+          if (valEl) valEl.textContent = k === "amount" ? Math.round(p[k]) : p[k].toFixed(2);
+        }
+        if (p.placement !== undefined) {
+          if (p.placement >= 0.5) { btnPlaceEdge.click(); } else { btnPlaceCenter.click(); }
+        }
+        if (p.multiply !== undefined) {
+          if (p.multiply >= 0.5) { btnMultOn.click(); } else { btnMultOff.click(); }
+        }
+        if (p.style !== undefined) {
+          if (p.style >= 0.5) { btnTex.click(); } else { btnFlat.click(); }
+        }
+        if (p.persistence !== undefined) {
+          if (p.persistence >= 0.5) { btnAccum.click(); } else { btnFade.click(); }
+        }
+        if (p.color) inputColor.value = p.color;
+        if (p.bg_color) inputBg.value = p.bg_color;
+      }
+
+      document.getElementById("pre-blood").onclick = () => {
+        applyPreset({
+          color: "#8a0303",
+          bg_color: "#f4eee6",
+          amount: 95,
+          stain_size: 1.35,
+          reach: 0.95,
+          viscosity: 1.05,
+          drip_length: 1.1,
+          style: 1,
+          placement: 0,
+        });
+      };
+
+      document.getElementById("pre-ink").onclick = () => {
+        applyPreset({
+          color: "#0d0d12",
+          bg_color: "#eee6d8",
+          amount: 140,
+          stain_size: 1.1,
+          reach: 1.25,
+          viscosity: 0.7,
+          drip_length: 0.6,
+          style: 1,
+          placement: 0,
+        });
+      };
+
+      document.getElementById("pre-spray").onclick = () => {
+        applyPreset({
+          color: "#ff2233",
+          bg_color: "#0a0a0c",
+          amount: 220,
+          stain_size: 0.55,
+          reach: 1.8,
+          viscosity: 0.4,
+          drip_length: 0.0,
+          style: 0,
+          placement: 1,
+        });
+      };
+
+      document.getElementById("pre-pollock").onclick = () => {
+        applyPreset({
+          color: "#181818",
+          bg_color: "#f2ece0",
+          amount: 110,
+          stain_size: 1.6,
+          reach: 1.35,
+          viscosity: 1.4,
+          drip_length: 1.5,
+          style: 1,
+          persistence: 1,
+          placement: 0,
+        });
+      };
+
+      // Web Audio API Setup
+      const micBtn = document.getElementById("mic-toggle-btn");
+      const micBtnText = document.getElementById("mic-btn-text");
+
+      async function toggleMic() {
+        if (isMicActive) {
+          if (micStream) micStream.getTracks().forEach((t) => t.stop());
+          if (audioCtx) audioCtx.close();
+          isMicActive = false;
+          micBtn.classList.remove("active");
+          micBtnText.textContent = "Enable Microphone";
+          levelBar.style.width = "0%";
+          return;
+        }
+
+        try {
+          micStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+          audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          const source = audioCtx.createMediaStreamSource(micStream);
+          analyser = audioCtx.createAnalyser();
+          analyser.fftSize = 128;
+          analyser.smoothingTimeConstant = 0.5;
+          source.connect(analyser);
+
+          isMicActive = true;
+          micBtn.classList.add("active");
+          micBtnText.textContent = "Active (Listening)";
+        } catch (err) {
+          alert("Microphone permission was not granted or is unavailable: " + err.message);
+        }
+      }
+      micBtn.onclick = toggleMic;
+
+      // Animation Loop
+      let last = performance.now();
+      const freqData = new Uint8Array(64);
+
+      function tick(now) {
+        const dt = Math.min(0.05, (now - last) / 1000);
+        state.time += dt;
+        last = now;
+
+        // Process audio reactivity
+        if (isMicActive && analyser) {
+          analyser.getByteFrequencyData(freqData);
+
+          // Bass / Kick detection (low frequencies)
+          let bassSum = 0;
+          for (let i = 0; i < 4; i++) bassSum += freqData[i];
+          const bass = bassSum / 4 / 255; // 0 to 1
+
+          // Total amplitude / volume
+          let totalSum = 0;
+          for (let i = 0; i < freqData.length; i++) totalSum += freqData[i];
+          const vol = totalSum / freqData.length / 255;
+
+          levelBar.style.width = Math.min(100, Math.round(vol * 220)) + "%";
+
+          // Dynamically map audio energy to liquid mechanics
+          state.amount = Math.min(300, (baseParams.amount || 85) * (1.0 + vol * 2.2));
+          state.stain_size = Math.min(3.0, (baseParams.stain_size || 1.25) * (1.0 + bass * 1.4));
+          state.reach = Math.min(2.0, (baseParams.reach || 1.0) * (1.0 + vol * 0.8));
+          state.viscosity = Math.max(0.2, (baseParams.viscosity || 1.0) * (1.0 - vol * 0.4));
+        }
+
+        if (!busy) {
+          busy = true;
+          worker.postMessage({ width: size, height: size, state });
+        }
+        requestAnimationFrame(tick);
+      }
+
+      worker.onmessage = (e) => {
+        if (e.data.manifest) {
+          for (const p of e.data.manifest.params || []) {
+            state[p.key] = p.default;
+            baseParams[p.key] = p.default;
+          }
+          for (const c of e.data.manifest.colors || []) {
+            state[c.key] = c.default;
+            baseParams[c.key] = c.default;
+          }
+          busy = false;
+          requestAnimationFrame(tick);
+          return;
+        }
+        out.transferFromImageBitmap(e.data.bitmap);
+        busy = false;
+      };
+    })();
+  </script>
+</body>
+</html>
